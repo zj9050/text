@@ -1,0 +1,43 @@
+# TRADIS 飞牛（fnOS）部署配置 —— 面板端口 10003
+# 基于官方仓库 coracoo/tradis_docker 的 client/docker-compose.yml 调整：
+#   1) 全部变量写成 ${VAR:-默认值} 并已按本机填好，即使图形界面没读到 .env 也能直接启动；
+#   2) 同目录 .env 优先级更高，日常改配置请改 .env，再执行 docker compose up -d。
+# 完整版使用官方预构建镜像 coracoo/tradis:latest，无需在 NAS 上编译源码。
+services:
+  tradis:
+    image: ${TRADIS_IMAGE:-coracoo/tradis:latest}
+    container_name: tradis
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      TZ: Asia/Shanghai
+      BACKEND_PORT: ${TRADIS_PORT:-10003}
+      GIN_MODE: release
+      # 随机强密钥（96 字符）；升级时务必保留原值
+      JWT_SECRET: "${JWT_SECRET:-88270aaed9255ded7b7c41848f771821f86da319dc07912e3c82ab9266cac0d5c04821e18e606a62fe1b0ddc7fefab92}"
+      # 首次安装必填；升级沿用 data 中已有管理员，不重新设置密码
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-IiaU7m0TXOq3ozVNhZBL}"
+      PROJECT_ROOT: "${PROJECT_ROOT:-/vol1/1000/docker/tradis/projects}"
+      # 默认允许所有来源以便开箱即用；确认访问地址后按《部署说明.md》收紧
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-*}"
+      CLOUDFLARE_SPEED_TEST: ${CLOUDFLARE_SPEED_TEST:-false}
+      TRADIS_STORAGE_PROBE_IMAGE: ${TRADIS_STORAGE_PROBE_IMAGE:-}
+      TRADIS_STORAGE_PROBE_UID: ${TRADIS_STORAGE_PROBE_UID:-1000}
+      TRADIS_STORAGE_PROBE_GID: ${TRADIS_STORAGE_PROBE_GID:-1000}
+      # 远程接入（多 NAS 管理）默认关闭，启用时其端口须与面板端口不同
+      TRADIS_REMOTE_AGENT_BIND: ${TRADIS_REMOTE_AGENT_BIND:-}
+      TRADIS_REMOTE_AGENT_PUBLIC_URL: ${TRADIS_REMOTE_AGENT_PUBLIC_URL:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # 官方新版为只读挂载 Docker socket。飞牛的镜像加速请在「Docker 设置」里配置，
+      # 不要额外挂载 /etc/docker/daemon.json（那是旧教程写法，新版不需要）。
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/app/client/backend/data
+      - "${PROJECT_ROOT:-/vol1/1000/docker/tradis/projects}:${PROJECT_ROOT:-/vol1/1000/docker/tradis/projects}"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 $$BACKEND_PORT"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
